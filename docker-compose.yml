@@ -1,0 +1,200 @@
+name: auctionhub
+
+x-common-labels: &common-labels
+  environment: ${ENVIRONMENT}
+  owner: ${OWNER}
+  cost-center: ${COST_CENTER}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auctionhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    labels:
+      <<: *common-labels
+      tier: database
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio_data:/data
+    labels:
+      <<: *common-labels
+      tier: storage
+
+  minio-init:
+    image: amazon/aws-cli:2.27.49
+    depends_on:
+      - minio
+    entrypoint: ["/bin/sh"]
+    command:
+      - "-ec"
+      - "until aws --endpoint-url http://minio:9000 s3api list-buckets >/dev/null 2>&1; do echo 'Waiting for MinIO...'; sleep 2; done; if ! aws --endpoint-url http://minio:9000 s3api head-bucket --bucket \"$$MINIO_BUCKET\" >/dev/null 2>&1; then aws --endpoint-url http://minio:9000 s3api create-bucket --bucket \"$$MINIO_BUCKET\"; fi; aws --endpoint-url http://minio:9000 s3api put-bucket-policy --bucket \"$$MINIO_BUCKET\" --policy \"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":\\\"*\\\",\\\"Action\\\":\\\"s3:GetObject\\\",\\\"Resource\\\":\\\"arn:aws:s3:::$$MINIO_BUCKET/*\\\"}]}\""
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_DEFAULT_REGION: us-east-1
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    restart: "no"
+    labels:
+      <<: *common-labels
+      tier: storage
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command: ["pnpm", "dev"]
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${BACKEND_PORT}:3000"
+    develop:
+      watch:
+        - action: sync
+          path: ./backend/src
+          target: /app/src
+          initial_sync: true
+        - action: sync
+          path: ./backend/server.ts
+          target: /app/server.ts
+          initial_sync: true
+        - action: sync+exec
+          path: ./backend/prisma/contract.prisma
+          target: /app/prisma/contract.prisma
+          initial_sync: true
+          exec:
+            command: pnpm prisma:emit
+        - action: rebuild
+          path: ./backend/package.json
+        - action: rebuild
+          path: ./backend/prisma.config.ts
+        - action: rebuild
+          path: ./backend/Dockerfile.dev
+    labels:
+      <<: *common-labels
+      tier: backend
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT}:5173"
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+          initial_sync: true
+        - action: sync
+          path: ./frontend/index.html
+          target: /app/index.html
+          initial_sync: true
+        - action: sync
+          path: ./frontend/public
+          target: /app/public
+          initial_sync: true
+        - action: sync
+          path: ./frontend/vite.config.ts
+          target: /app/vite.config.ts
+          initial_sync: true
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/Dockerfile.dev
+    labels:
+      <<: *common-labels
+      tier: frontend
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "${CADVISOR_PORT}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    labels:
+      <<: *common-labels
+      tier: observability
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    restart: unless-stopped
+    depends_on:
+      - cadvisor
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "${PROMETHEUS_PORT}:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    labels:
+      <<: *common-labels
+      tier: observability
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    labels:
+      <<: *common-labels
+      tier: observability
+
+volumes:
+  postgres_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:
