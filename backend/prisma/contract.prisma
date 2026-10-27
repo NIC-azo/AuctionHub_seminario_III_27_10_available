@@ -1,0 +1,34 @@
+// use prisma-8
+
+model User {
+  id        String    @id @onCreate(uuid())
+  username  String    @unique
+  email     String    @unique
+  password  String
+  role      String    @default("buyer")
+  createdAt DateTime  @default(now())
+
+  products  Product[] @relation("SellerProducts")
+  purchases Product[] @relation("WinnerProducts")
+}
+
+model Product {
+  id           String   @id @onCreate(uuid())
+  title        String
+  description  String
+  initialPrice Float
+  currentPrice Float
+  imageUrl     String
+  status       String   @default("available")
+
+  sellerId String
+  seller   User   @relation("SellerProducts", fields: [sellerId], references: [id])
+
+  winnerId String?
+  winner   User?   @relation("WinnerProducts", fields: [winnerId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([sellerId])
+  @@index([winnerId])
+}
