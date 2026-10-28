@@ -292,6 +292,27 @@ Rutas presentes en el código:
 | `PATCH` | `/api/users/:id` | JWT; propietario o administrador |
 | `DELETE` | `/api/users/:id` | JWT; propietario o administrador |
 
-La inspección de los archivos confirma que esas rutas y componentes están implementados, pero **todavía no se ha hecho una prueba funcional de la API mediante peticiones HTTP desde CLI**. La siguiente sesión se dedicará a iniciar o confirmar el backend y probar de forma ordenada `GET /health`, `GET /api`, registro e inicio de sesión, operaciones públicas de productos y rutas protegidas con tokens, incluyendo respuestas de validación y permisos. Se usarán datos de prueba y se limpiarán únicamente los registros creados para esas pruebas, si corresponde. No se debe asumir que la API está validada hasta ejecutar y registrar los códigos HTTP y respuestas reales.
+Para crear un producto, `POST /api/products` acepta `multipart/form-data` con los campos `title`, `description`, `initialPrice` e imagen en el campo `image`. Se admiten JPEG, PNG y WebP hasta 5 MB; el archivo se carga en MinIO y la URL se guarda en PostgreSQL. Como alternativa, se mantiene la creación JSON existente usando `imageUrl` en vez del archivo. Debe enviarse exactamente una de las dos formas de imagen.
 
-También queda pendiente comprobar el flujo de carga de archivos: el servicio MinIO existe, pero el controlador de productos actualmente recibe una `imageUrl` en el cuerpo JSON y no invoca ese servicio. No hay rutas de pujas o subastas en este estado.
+### Resultado de pruebas CLI (2026-10-28)
+
+Se probaron los endpoints HTTP contra los contenedores activos después de reconstruir el backend:
+
+| Prueba | Resultado |
+|---|---:|
+| `GET /health`, `GET /api`, `GET /api/products` | `200` |
+| Registrar dos vendedores y dos compradores de prueba | `201` cada uno |
+| Login correcto / contraseña incorrecta | `200` / `401` |
+| Registro con contraseña inválida | `400` |
+| Consultar usuarios como comprador | `403` |
+| Crear producto sin token / como comprador | `401` / `403` |
+| Crear producto multipart con imagen en MinIO | `201` |
+| Leer producto y actualizarlo como propietario | `200` / `200` |
+| Actualizarlo como otro vendedor / descargar imagen pública | `403` / `200` |
+| Eliminar producto y cuentas temporales | `204` |
+
+Las cuentas y el producto creados para las pruebas fueron eliminados; también se borró el objeto de prueba de MinIO. La verificación final encontró cero productos de prueba en la API y cero objetos en el bucket. El backend, PostgreSQL y MinIO permanecieron activos.
+
+Estas pruebas son una validación funcional básica, no una prueba de carga ni de concurrencia. No se cargaron 35 productos porque no se proporcionaron imágenes reales de catálogo. **No se probaron compras ni cinco operaciones concurrentes:** el backend aún no tiene rutas o lógica de compra, pujas o subastas. Será necesario implementarlas antes de validar ese flujo.
+
+El servicio de carga MinIO está conectado al alta de productos. No hay rutas de pujas o subastas en este estado.

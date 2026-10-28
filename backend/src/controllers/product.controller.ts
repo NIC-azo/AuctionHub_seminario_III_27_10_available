@@ -1,15 +1,37 @@
 import type { RequestHandler } from "express";
 import { z } from "zod";
 import { asyncHandler, HttpError } from "../middlewares/error.middleware.js";
+import { MinioService } from "../services/minio.service.js";
 import { ProductModel } from "../models/product.model.js";
 
 const idSchema = z.string().uuid();
 
+function hasValidImageSignature(file: Express.Multer.File): boolean {
+  if (file.mimetype === "image/png") {
+    return file.buffer.subarray(0, 8).equals(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+  }
+
+  if (file.mimetype === "image/jpeg") {
+    return file.buffer[0] === 0xff
+      && file.buffer[1] === 0xd8
+      && file.buffer[2] === 0xff;
+  }
+
+  if (file.mimetype === "image/webp") {
+    return file.buffer.toString("ascii", 0, 4) === "RIFF"
+      && file.buffer.toString("ascii", 8, 12) === "WEBP";
+  }
+
+  return false;
+}
+
 const createProductSchema = z.object({
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().min(1).max(5000),
-  initialPrice: z.number().finite().positive(),
-  imageUrl: z.string().trim().url().max(2048),
+  initialPrice: z.coerce.number().finite().positive(),
+  imageUrl: z.string().trim().url().max(2048).optional(),
 }).strict();
 
 const updateProductSchema = z.object({
@@ -41,8 +63,25 @@ export const createProduct: RequestHandler = asyncHandler(async (request, respon
   }
 
   const input = createProductSchema.parse(request.body);
+  if (request.file && !hasValidImageSignature(request.file)) {
+    throw new HttpError(415, "Uploaded file content is not a valid supported image");
+  }
+
+  if (Boolean(request.file) === Boolean(input.imageUrl)) {
+    throw new HttpError(400, "Provide exactly one image file or imageUrl");
+  }
+
+  const imageUrl = request.file
+    ? await MinioService.uploadFile(request.file)
+    : input.imageUrl;
+
+  if (!imageUrl) {
+    throw new HttpError(400, "A product image is required");
+  }
+
   const product = await ProductModel.create({
     ...input,
+    imageUrl,
     currentPrice: input.initialPrice,
     sellerId: seller.id,
   });
