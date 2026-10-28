@@ -257,11 +257,10 @@ La configuración debe ser un archivo YAML. Si `prometheus.yml` aparece como car
 
 ## Trabajo pendiente
 
-- Probar por CLI los endpoints existentes del backend, sus respuestas y los controles de autorización.
-- Implementar pujas y subastas, que todavía no tienen rutas ni lógica de negocio.
-- Conectar la carga de archivos del controlador de productos con el servicio MinIO existente.
-- Implementar las páginas y flujos funcionales del frontend e integrarlos con la API.
-- Añadir paneles de Grafana y pruebas automatizadas de la aplicación.
+- Implementar pujas, cierre de subastas y compras; todavía no existen sus rutas ni reglas de negocio.
+- Añadir pruebas automatizadas de integración y de navegador para los flujos principales.
+- Alinear TypeScript y `typescript-eslint`: el lint actual no se inicia porque `typescript-eslint` 8.72.1 no admite TypeScript 7.0.2.
+- Ampliar los paneles de Grafana y la cobertura de observabilidad de la aplicación.
 
 ## Anexo: estado del backend y próxima validación por CLI (2026-10-27)
 
@@ -316,3 +315,31 @@ Las cuentas y el producto creados para las pruebas fueron eliminados; también s
 Estas pruebas son una validación funcional básica, no una prueba de carga ni de concurrencia. No se cargaron 35 productos porque no se proporcionaron imágenes reales de catálogo. **No se probaron compras ni cinco operaciones concurrentes:** el backend aún no tiene rutas o lógica de compra, pujas o subastas. Será necesario implementarlas antes de validar ese flujo.
 
 El servicio de carga MinIO está conectado al alta de productos. No hay rutas de pujas o subastas en este estado.
+
+## Anexo: frontend e integración con Compose Watch (2026-10-28)
+
+El frontend está organizado por responsabilidad dentro de `frontend/src/`:
+
+- `types/types.bd.ts`: contratos compartidos de usuario, producto, autenticación y errores de API.
+- `api/`: instancia Axios con interceptores JWT y normalización de errores, helper de peticiones y funciones para autenticación, productos y perfil.
+- `store/auth.store.ts`: sesión Zustand persistida en `sessionStorage`.
+- `secure/`: protección de rutas por sesión y rol, y redirección de usuarios autenticados fuera del login/registro.
+- `routes/AppRouter.tsx` y `layout/MainLayout.tsx`: rutas, navegación y estructura compartida.
+- `app/pages/`: catálogo con búsqueda, registro e inicio de sesión, detalle de producto, publicación y perfil.
+- `app/components/ProductCard.tsx`: tarjeta reutilizable del catálogo.
+
+El alta de productos envía `multipart/form-data` con la imagen en el campo `image`; se valida JPEG, PNG o WebP de hasta 5 MB en la interfaz y el backend la almacena en MinIO. El catálogo consume `GET /api/products`. No se muestra una acción de compra porque el backend todavía no implementa ese flujo. Tailwind CSS 4 se carga mediante `@import "tailwindcss";` y el plugin `@tailwindcss/vite`.
+
+### Ejecutar y validar
+
+Desde la raíz, instala las dependencias con `pnpm install` dentro de `frontend/`. Para mantener los archivos del host sincronizados con los servicios de desarrollo, inicia Compose Watch y deja esa terminal abierta:
+
+```powershell
+docker compose up --watch
+```
+
+No ejecutes dos observadores al mismo tiempo. `docker compose up -d` levanta los contenedores, pero no mantiene Compose Watch activo. Las reglas sincronizan `frontend/src`, `index.html`, `public` y `vite.config.ts`; los cambios de dependencias o Dockerfile requieren reconstruir la imagen. También se puede usar `docker compose watch frontend` si solo se necesita observar el frontend.
+
+La validación realizada en el contenedor Node 24 terminó correctamente con `docker compose exec -T frontend pnpm build` (TypeScript y build de Vite). Se comprobó en navegador la carga del catálogo, el acceso a login/registro y la redirección de `/products/new` a `/login` sin sesión; el backend respondió `200` en `/health`. Además, Compose Watch sincronizó un cambio en `frontend/src` y Vite registró actualizaciones HMR. Para conservar esa sincronización durante el desarrollo, mantén activo el comando de Compose Watch.
+
+`pnpm lint` no se pudo ejecutar: `typescript-eslint` 8.72.1 falla al cargar con TypeScript 7.0.2. Esta incompatibilidad de versiones queda pendiente de corregir. No se crearon cuentas ni productos para estas pruebas de interfaz.
