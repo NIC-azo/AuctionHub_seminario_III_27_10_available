@@ -27,7 +27,7 @@ services:
       tier: database
 
   minio:
-    image: quay.io/minio/minio:latest
+    image: pgsty/silo:latest
     command: server /data --console-address ":9001"
     restart: unless-stopped
     environment:

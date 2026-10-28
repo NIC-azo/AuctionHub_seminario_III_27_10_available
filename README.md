@@ -25,16 +25,29 @@ La siguiente captura muestra el estado de Docker Desktop durante la configuraci�
 
 ## Configuración
 
-1. Clona el repositorio y entra en su directorio raíz.
-2. Crea el archivo local de variables de entorno a partir de la plantilla:
+1. Clona el repositorio y entra en la carpeta creada:
 
    ```powershell
-   Copy-Item .env.example .env
+   git clone https://github.com/NIC-azo/AuctionHub_seminario_III_27_10_available.git
+   Set-Location AuctionHub_seminario_III_27_10_available
    ```
 
-3. Revisa `.env` y cambia las contraseñas de ejemplo antes de utilizar el proyecto fuera de un entorno local. **No publiques `.env` ni incluyas credenciales reales en el repositorio.**
+2. Crea los archivos de entorno locales solo si todavía no existen. Así no sobrescribes valores que ya configuraste:
 
-Docker Compose lee el `.env` situado en la raíz para configurar los servicios. Para ejecutar el backend directamente en el host, se puede usar `backend/.env`; ese archivo también debe contener valores locales válidos y no debe publicarse.
+   ```powershell
+   if (-not (Test-Path .env)) {
+     Copy-Item .env.example .env
+   }
+   if (-not (Test-Path backend/.env)) {
+     Copy-Item backend/.env.example backend/.env
+   }
+   ```
+
+3. Configura ambos archivos con credenciales locales. `.env` en la raíz es para Docker Compose: revisa `DB_USER`, `DB_PASSWORD` y `DB_NAME`. `backend/.env` es para ejecutar Prisma desde Windows y debe tener un `DATABASE_URL` con el mismo usuario, contraseña y base, usando `localhost:5433`. Dentro de Compose, el backend usa `postgres:5432`; no copies esa dirección interna en el `DATABASE_URL` del host.
+
+   **No publiques `.env` ni `backend/.env` y no reemplaces las plantillas versionadas (`.env.example`).** Cambia las contraseñas de ejemplo antes de exponer el entorno a otras personas o redes. Si ambas formas de conexión se usan contra el mismo servicio, apuntan a la misma base de datos; no son dos bases para migrar por separado.
+
+Docker Compose lee el `.env` de la raíz. Los comandos Prisma que se ejecutan desde `backend` en el host cargan `backend/.env`. Mantén las credenciales de conexión de ambos archivos sincronizadas para que las herramientas locales y Compose trabajen contra la misma base.
 
 ## Iniciar el entorno completo
 
@@ -108,24 +121,67 @@ En la red interna de Compose, los servicios se comunican usando sus nombres de s
 
 Este proyecto usa Prisma ORM 8 Release Candidate, siguiendo la guía oficial [Set up Prisma ORM from scratch](https://www.prisma.io/docs/prisma-orm/from-scratch). En esta versión el esquema es un contrato en `backend/prisma/contract.prisma`; la conexión se configura en `backend/prisma.config.ts` y el runtime se importa desde `@prisma/orm-postgres`. Por tanto, este backend no usa `@prisma/client`, `schema.prisma`, `prisma generate` ni `migrate dev`.
 
+En Prisma ORM 8, `prisma contract emit` es el paso de generación equivalente al antiguo `prisma generate`; no instala ni genera `@prisma/client`. Los scripts `pnpm dev` y `pnpm start` ya ejecutan `pnpm prisma:emit` antes de iniciar la API. Ejecuta `pnpm prisma:emit` manualmente después de cambiar el contrato o antes de usar tipos generados desde TypeScript.
+
 El contrato inicial contiene:
 
 - `User`: identificador UUID, nombre de usuario y correo únicos, contraseña y rol (`buyer` por defecto).
 - `Product`: título, descripción, precios, imagen y estado (`available` por defecto).
 - Relaciones de producto con el vendedor y, opcionalmente, con el usuario ganador.
 
-Al iniciar (`pnpm dev` o `pnpm start`), el script ejecuta `prisma contract emit` para generar `contract.json` y `contract.d.ts` antes de arrancar la API. Cambia el contrato y ejecuta estos comandos desde `backend` para gestionar la base de datos:
+### Primera configuración en una PC nueva
+
+El volumen de PostgreSQL de Docker no se comparte al clonar el repositorio en otra computadora. Para crear una base de desarrollo nueva:
+
+1. Desde la raíz, inicia PostgreSQL y espera a que esté saludable:
+
+   ```powershell
+   docker compose up -d postgres
+   docker compose ps postgres
+   ```
+
+2. Instala las dependencias del backend y ejecuta Prisma desde esa carpeta, para que las migraciones generadas se guarden en el repositorio del host:
+
+   ```powershell
+   Set-Location backend
+   pnpm install
+   pnpm prisma:emit
+   pnpm prisma:init
+   pnpm prisma:migration:status
+   ```
+
+   `pnpm prisma:init` inicializa una base **vacía** a partir del contrato, crea y firma el esquema actual en PostgreSQL y establece la referencia local de migración. Debe ejecutarse una sola vez por base nueva. **No lo ejecutes sobre una base existente que tenga datos o tablas sin revisar primero su estado y hacer una copia de seguridad.**
+
+3. Incluye en el repositorio el baseline inicial y el estado de referencia generados en `backend/migrations/`; son el historial que necesitarán las demás computadoras. Una vez que ese baseline esté en el repositorio clonado, no vuelvas a ejecutar `pnpm prisma:migration:plan --name initial` ni recrees el baseline. Verifica con `pnpm prisma:migration:status`; el resultado esperado es `Up to date`.
+
+Si la base ya existía o ya fue inicializada (por ejemplo, si el volumen de Docker se conserva), no ejecutes `prisma:init`: revisa directamente el estado:
 
 ```powershell
-pnpm prisma:init
+Set-Location backend
+pnpm prisma:migration:status
+```
+
+### Cambios posteriores al contrato
+
+Para un cambio de esquema, trabaja desde `backend` y contra la base de desarrollo correcta:
+
+```powershell
+pnpm prisma:emit
 pnpm prisma:migration:plan --name <nombre_del_cambio>
+```
+
+Revisa el plan y sus operaciones antes de aplicarlo. Si es el cambio esperado:
+
+```powershell
 pnpm prisma:migrate
 pnpm prisma:migration:status
 ```
 
-`prisma:init` inicializa y firma el estado inicial del contrato en PostgreSQL. Para cambios posteriores, emite el contrato, crea el plan de migración y aplícalo. Estos comandos modifican el esquema y los datos de la base; ejecútalos solo contra la base de desarrollo correcta. La guía oficial explica el flujo y los requisitos de una base vacía para la inicialización.
+`pnpm prisma:migrate` aplica las migraciones pendientes y avanza la referencia `db`. Conserva en Git los archivos generados bajo `backend/migrations/`, incluyendo las migraciones, `refs` y snapshots que cambien. No ignores ni elimines ese historial: es lo que permite compartir y revisar la evolución del esquema en otras computadoras.
 
-La conexión a PostgreSQL se obtiene de `DATABASE_URL`. En local la proporciona `backend/.env`; dentro de Compose, el servicio backend recibe la conexión del `.env` de la raíz y se conecta a `postgres:5432`.
+Estos comandos se ejecutan una sola vez contra la base correspondiente. No migres una vez desde Windows y otra vez desde el contenedor: `localhost:5433` (Windows) y `postgres:5432` (red interna de Compose) son rutas diferentes hacia el mismo PostgreSQL cuando ambos usan el servicio y la base configurados en este proyecto. Se recomienda ejecutar Prisma desde `backend` en el host, porque así las migraciones generadas se guardan en la copia del repositorio. Compose inicia el backend y emite el contrato, pero no inicializa ni aplica migraciones automáticamente.
+
+Las carpetas `backend/.agents`, `backend/.claude`, `backend/.cursor` y `backend/.devin` pueden recibir skills al ejecutar `pnpm install` (`prisma skills sync`). El `.gitignore` ignora archivos adicionales generados localmente en esas rutas, pero **los skills que ya están versionados siguen siendo parte del repositorio**. Las carpetas `backend/migrations/` no se ignoran y deben compartirse.
 
 ## Base de la API
 
@@ -176,6 +232,7 @@ La configuración debe ser un archivo YAML. Si `prometheus.yml` aparece como car
 ├── docker-compose.yml
 ├── backend/
 │   ├── Dockerfile.dev
+│   ├── migrations/
 │   ├── prisma.config.ts
 │   ├── prisma/
 │   │   └── contract.prisma
@@ -200,9 +257,41 @@ La configuración debe ser un archivo YAML. Si `prometheus.yml` aparece como car
 
 ## Trabajo pendiente
 
-- Ejecutar la inicialización del contrato Prisma en la base de desarrollo y guardar los archivos de migración.
-- Implementar controladores y rutas de registro/inicio de sesión, productos, pujas y subastas.
-- Implementar rutas, controladores, validación y persistencia de usuarios, productos y subastas.
-- Conectar las operaciones de archivos de la API con MinIO.
+- Probar por CLI los endpoints existentes del backend, sus respuestas y los controles de autorización.
+- Implementar pujas y subastas, que todavía no tienen rutas ni lógica de negocio.
+- Conectar la carga de archivos del controlador de productos con el servicio MinIO existente.
 - Implementar las páginas y flujos funcionales del frontend e integrarlos con la API.
-- Añadir paneles de Grafana y pruebas de la aplicación.
+- Añadir paneles de Grafana y pruebas automatizadas de la aplicación.
+
+## Anexo: estado del backend y próxima validación por CLI (2026-10-27)
+
+El backend ya tiene una API Express organizada en `backend/src/`:
+
+- `controllers/`: controladores de autenticación, usuarios y productos. Incluyen validación de entradas con Zod, hashing de contraseñas y respuestas HTTP.
+- `database/prisma.ts`: instancia compartida del runtime de Prisma ORM 8, que carga el contrato emitido y requiere `DATABASE_URL`.
+- `middlewares/`: autenticación JWT, autorización por roles y manejo centralizado de errores.
+- `models/`: operaciones de persistencia para usuarios y productos mediante el runtime Prisma ORM 8.
+- `routes/`: rutas para registro e inicio de sesión, usuarios y productos, montadas bajo `/api`.
+- `services/`: servicio de almacenamiento compatible con S3/MinIO.
+
+Rutas presentes en el código:
+
+| Método | Ruta | Acceso |
+|---|---|---|
+| `GET` | `/health` | Público; estado del proceso HTTP |
+| `GET` | `/api` | Público; estado e información de la API |
+| `POST` | `/api/auth/register` | Público |
+| `POST` | `/api/auth/login` | Público |
+| `GET` | `/api/products` | Público |
+| `GET` | `/api/products/:id` | Público |
+| `POST` | `/api/products` | JWT y rol `seller` o `admin` |
+| `PATCH` | `/api/products/:id` | JWT; propietario o administrador |
+| `DELETE` | `/api/products/:id` | JWT; propietario o administrador |
+| `GET` | `/api/users` | JWT y rol `admin` |
+| `GET` | `/api/users/:id` | JWT |
+| `PATCH` | `/api/users/:id` | JWT; propietario o administrador |
+| `DELETE` | `/api/users/:id` | JWT; propietario o administrador |
+
+La inspección de los archivos confirma que esas rutas y componentes están implementados, pero **todavía no se ha hecho una prueba funcional de la API mediante peticiones HTTP desde CLI**. La siguiente sesión se dedicará a iniciar o confirmar el backend y probar de forma ordenada `GET /health`, `GET /api`, registro e inicio de sesión, operaciones públicas de productos y rutas protegidas con tokens, incluyendo respuestas de validación y permisos. Se usarán datos de prueba y se limpiarán únicamente los registros creados para esas pruebas, si corresponde. No se debe asumir que la API está validada hasta ejecutar y registrar los códigos HTTP y respuestas reales.
+
+También queda pendiente comprobar el flujo de carga de archivos: el servicio MinIO existe, pero el controlador de productos actualmente recibe una `imageUrl` en el cuerpo JSON y no invoca ese servicio. No hay rutas de pujas o subastas en este estado.

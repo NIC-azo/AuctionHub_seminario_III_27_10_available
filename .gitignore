@@ -24,3 +24,10 @@ dist-ssr
 *.sw?
 
 .env
+
+# Prisma skill sync may create local agent files. Keep repository-tracked skills;
+# ignore only additional generated files in the backend agent directories.
+/backend/.agents/
+/backend/.claude/
+/backend/.cursor/
+/backend/.devin/
