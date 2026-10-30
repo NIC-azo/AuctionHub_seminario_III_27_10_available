@@ -22,6 +22,18 @@ export interface Product {
   createdAt: string;
 }
 
+export interface Bid {
+  id: string;
+  amount: number;
+  productId: string;
+  userId: string;
+  createdAt: string;
+  user?: {
+    id: string;
+    username: string;
+  };
+}
+
 export interface AuthResponse {
   token: string;
   user: User;
@@ -29,6 +41,7 @@ export interface AuthResponse {
 
 export interface ApiResponse<T> {
   success: boolean;
+  message?: string;
   data: T;
 }
 

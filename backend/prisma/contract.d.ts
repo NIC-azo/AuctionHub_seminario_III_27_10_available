@@ -23,9 +23,9 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'ae979602fd9ee4113048e1117c5a46d9fd0407f952af125c5bf9d5b974441f75'>;
+  StorageHashBase<'e2c3f070dd4a541cc2bbf5d6e056077426dfa20c308e9c5a90a837da8797ec7f'>;
 export type ExecutionHash =
-  ExecutionHashBase<'3161dd0ab48c5acb0be7bc9b6013f460c24d846938b95c466b9d3798ae0b0653'>;
+  ExecutionHashBase<'2b1c3019b12b78ca490bdf1ce6ed4e8b37998882eed9e7f0e5f6f9d008962a95'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -270,6 +270,16 @@ export type StorageColumnInputTypes = ColumnTypesFromStorage<
 >;
 
 export namespace Models {
+  export type public_Bid = {
+    amount: FieldOutputTypes['public']['Bid']['amount'];
+    createdAt: FieldOutputTypes['public']['Bid']['createdAt'];
+    id: FieldOutputTypes['public']['Bid']['id'];
+    productId: FieldOutputTypes['public']['Bid']['productId'];
+    userId: FieldOutputTypes['public']['Bid']['userId'];
+    product: public_Product;
+    user: public_User;
+    readonly [RelationKeys]?: 'product' | 'user';
+  };
   export type public_Product = {
     createdAt: FieldOutputTypes['public']['Product']['createdAt'];
     currentPrice: FieldOutputTypes['public']['Product']['currentPrice'];
@@ -281,9 +291,10 @@ export namespace Models {
     status: FieldOutputTypes['public']['Product']['status'];
     title: FieldOutputTypes['public']['Product']['title'];
     winnerId: FieldOutputTypes['public']['Product']['winnerId'];
+    bids: public_Bid[];
     seller: public_User;
     winner: public_User | null;
-    readonly [RelationKeys]?: 'seller' | 'winner';
+    readonly [RelationKeys]?: 'bids' | 'seller' | 'winner';
   };
   export type public_User = {
     createdAt: FieldOutputTypes['public']['User']['createdAt'];
@@ -292,14 +303,16 @@ export namespace Models {
     password: FieldOutputTypes['public']['User']['password'];
     role: FieldOutputTypes['public']['User']['role'];
     username: FieldOutputTypes['public']['User']['username'];
+    bids: public_Bid[];
     products: public_Product[];
     purchases: public_Product[];
-    readonly [RelationKeys]?: 'products' | 'purchases';
+    readonly [RelationKeys]?: 'bids' | 'products' | 'purchases';
   };
 }
 
 export declare const models: {
   public: {
+    Bid: Models.public_Bid;
     Product: Models.public_Product;
     User: Models.public_User;
   };
@@ -323,6 +336,83 @@ type ContractBase = Omit<
         readonly kind: 'postgres-schema';
         readonly entries: {
           readonly table: {
+            readonly Bid: {
+              columns: {
+                readonly amount: {
+                  readonly dataType: 'pg/float8';
+                  readonly codecId: 'pg/float8@1';
+                  readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly createdAt: {
+                  readonly dataType: 'pg/timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                  readonly many: false;
+                };
+                readonly id: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly productId: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly userId: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                  readonly many: false;
+                };
+              };
+              primaryKey: { readonly columns: readonly ['id'] };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'Bid_productId_idx_5858600a';
+                  readonly prefix: 'Bid_productId_idx';
+                  readonly columns: readonly ['productId'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'Bid_userId_idx_a489d58a';
+                  readonly prefix: 'Bid_userId_idx';
+                  readonly columns: readonly ['userId'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'Bid';
+                    readonly columns: readonly ['productId'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'Product';
+                    readonly columns: readonly ['id'];
+                  };
+                },
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'Bid';
+                    readonly columns: readonly ['userId'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'User';
+                    readonly columns: readonly ['id'];
+                  };
+                },
+              ];
+            };
             readonly Product: {
               columns: {
                 readonly createdAt: {
@@ -497,6 +587,7 @@ type ContractBase = Omit<
   readonly target: 'postgres';
   readonly targetFamily: 'sql';
   readonly roots: {
+    readonly Bid: { readonly namespace: 'public' & NamespaceId; readonly model: 'Bid' };
     readonly Product: { readonly namespace: 'public' & NamespaceId; readonly model: 'Product' };
     readonly User: { readonly namespace: 'public' & NamespaceId; readonly model: 'User' };
   };
@@ -504,6 +595,67 @@ type ContractBase = Omit<
     readonly namespaces: {
       readonly public: {
         readonly models: {
+          readonly Bid: {
+            readonly fields: {
+              readonly amount: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/float8@1' };
+              };
+              readonly createdAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                };
+              };
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly productId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly userId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+            };
+            readonly relations: {
+              readonly product: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Product';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: false;
+                readonly on: {
+                  readonly localFields: readonly ['productId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
+              readonly user: {
+                readonly to: { readonly namespace: 'public' & NamespaceId; readonly model: 'User' };
+                readonly cardinality: 'N:1';
+                readonly nullable: false;
+                readonly on: {
+                  readonly localFields: readonly ['userId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
+            };
+            readonly storage: {
+              readonly table: 'Bid';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly amount: { readonly column: 'amount' };
+                readonly createdAt: { readonly column: 'createdAt' };
+                readonly id: { readonly column: 'id' };
+                readonly productId: { readonly column: 'productId' };
+                readonly userId: { readonly column: 'userId' };
+              };
+            };
+          };
           readonly Product: {
             readonly fields: {
               readonly createdAt: {
@@ -551,6 +703,14 @@ type ContractBase = Omit<
               };
             };
             readonly relations: {
+              readonly bids: {
+                readonly to: { readonly namespace: 'public' & NamespaceId; readonly model: 'Bid' };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['productId'];
+                };
+              };
               readonly seller: {
                 readonly to: { readonly namespace: 'public' & NamespaceId; readonly model: 'User' };
                 readonly cardinality: 'N:1';
@@ -618,6 +778,14 @@ type ContractBase = Omit<
               };
             };
             readonly relations: {
+              readonly bids: {
+                readonly to: { readonly namespace: 'public' & NamespaceId; readonly model: 'Bid' };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['userId'];
+                };
+              };
               readonly products: {
                 readonly to: {
                   readonly namespace: 'public' & NamespaceId;
@@ -690,6 +858,14 @@ type ContractBase = Omit<
     readonly executionHash: ExecutionHash;
     readonly mutations: {
       readonly defaults: readonly [
+        {
+          readonly onCreate: { readonly id: 'uuidv4'; readonly kind: 'generator' };
+          readonly ref: {
+            readonly entry: 'Bid';
+            readonly field: 'id';
+            readonly namespace: 'public';
+          };
+        },
         {
           readonly onCreate: { readonly id: 'uuidv4'; readonly kind: 'generator' };
           readonly ref: {

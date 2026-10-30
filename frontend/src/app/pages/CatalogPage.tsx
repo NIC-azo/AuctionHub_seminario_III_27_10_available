@@ -1,33 +1,79 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowRight, BadgeCheck, CircleHelp, PackageSearch, Search, Sparkles } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowRight,
+  BadgeCheck,
+  CheckCircle2,
+  CircleHelp,
+  Filter,
+  Layers,
+  Package,
+  PackageSearch,
+  Search,
+  ShoppingBag,
+  Sparkles,
+  UserCheck,
+} from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { listProducts } from "../../api/products.api";
 import { ProductCard } from "../components/ProductCard";
 import { useAuthStore } from "../../store/auth.store";
 
+type ScopeFilter = "all" | "mine" | "purchases";
+type StatusFilter = "all" | "available" | "sold";
+
 export function CatalogPage() {
   const [search, setSearch] = useState("");
+  const [scope, setScope] = useState<ScopeFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
   const user = useAuthStore((state) => state.user);
+
   const productsQuery = useQuery({
     queryKey: ["products"],
     queryFn: listProducts,
     staleTime: 30_000,
   });
 
-  const products = useMemo(() => {
-    const available = (productsQuery.data ?? []).filter(
-      (product) => product.status === "available",
-    );
-    const normalizedSearch = search.trim().toLocaleLowerCase("es");
-    if (!normalizedSearch) return available;
+  const rawProducts = productsQuery.data ?? [];
 
-    return available.filter((product) =>
+  // Conteos para los chips
+  const totalCount = rawProducts.length;
+  const availableCount = rawProducts.filter((p) => p.status === "available").length;
+  const soldCount = rawProducts.filter((p) => p.status === "sold").length;
+  const myProductsCount = user
+    ? rawProducts.filter((p) => p.sellerId === user.id).length
+    : 0;
+  const myPurchasesCount = user
+    ? rawProducts.filter((p) => p.winnerId === user.id).length
+    : 0;
+
+  const products = useMemo(() => {
+    let list = rawProducts;
+
+    // Filtro por pertenencia / rol de usuario
+    if (scope === "mine" && user?.id) {
+      list = list.filter((product) => product.sellerId === user.id);
+    } else if (scope === "purchases" && user?.id) {
+      list = list.filter((product) => product.winnerId === user.id);
+    }
+
+    // Filtro por estado
+    if (statusFilter !== "all") {
+      list = list.filter((product) => product.status === statusFilter);
+    }
+
+    // Filtro por búsqueda de texto
+    const normalizedSearch = search.trim().toLocaleLowerCase("es");
+    if (!normalizedSearch) return list;
+
+    return list.filter((product) =>
       `${product.title} ${product.description}`
         .toLocaleLowerCase("es")
         .includes(normalizedSearch),
     );
-  }, [productsQuery.data, search]);
+  }, [rawProducts, scope, statusFilter, search, user?.id]);
 
   return (
     <>
@@ -87,20 +133,134 @@ export function CatalogPage() {
         </div>
       </section>
 
-      <section id="catalogo" className="mx-auto max-w-7xl px-5 py-16 sm:px-8 sm:py-20">
-        <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <section id="catalogo" className="mx-auto max-w-7xl px-5 py-12 sm:px-8 sm:py-16">
+        <div className="mb-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <span className="text-[10px] font-bold uppercase tracking-[.16em] text-slate-400">El escaparate</span>
             <h2 data-testid="catalog-heading" className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
               Hallazgos <span className="font-serif font-normal italic text-emerald-800">para hoy.</span>
             </h2>
-            <p className="mt-2 text-xs text-slate-500">Artículos compartidos por nuestra comunidad.</p>
+            <p className="mt-2 text-xs text-slate-500">
+              {scope === "mine"
+                ? "Mostrando tus publicaciones registradas en la plataforma."
+                : scope === "purchases"
+                ? "Mostrando los artículos adjudicados a tu cuenta."
+                : "Artículos compartidos por nuestra comunidad."}
+            </p>
           </div>
           <label className="flex h-11 w-full items-center gap-2.5 rounded-lg border border-stone-200 bg-white px-3 text-slate-400 transition focus-within:border-emerald-700 focus-within:ring-2 focus-within:ring-emerald-700/10 sm:max-w-xs">
             <Search size={17} />
             <span className="sr-only">Buscar productos</span>
-            <input className="w-full bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-400" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Busca algo especial..." />
+            <input
+              className="w-full bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-400"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Busca algo especial..."
+            />
           </label>
+        </div>
+
+        {/* Barra de Filtros interactiva (Alcance y Estado) */}
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-stone-200 bg-white p-3 sm:p-4">
+          {/* Filtro de Alcance (Comunidad vs Mis Publicaciones / Compras) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 hidden items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 md:inline-flex">
+              <Filter size={13} /> Filtrar:
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setScope("all")}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                scope === "all"
+                  ? "bg-emerald-900 text-white shadow-sm"
+                  : "bg-stone-100 text-slate-600 hover:bg-stone-200"
+              }`}
+            >
+              <Layers size={13} />
+              Comunidad
+              <span className={`ml-1 rounded-full px-1.5 py-0.2 text-[10px] ${scope === "all" ? "bg-emerald-800 text-lime-200" : "bg-stone-200 text-slate-600"}`}>
+                {totalCount}
+              </span>
+            </button>
+
+            {user?.role === "seller" && (
+              <button
+                type="button"
+                onClick={() => setScope("mine")}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  scope === "mine"
+                    ? "bg-emerald-900 text-white shadow-sm"
+                    : "bg-stone-100 text-slate-600 hover:bg-stone-200"
+                }`}
+              >
+                <UserCheck size={13} />
+                Mis Publicaciones
+                <span className={`ml-1 rounded-full px-1.5 py-0.2 text-[10px] ${scope === "mine" ? "bg-emerald-800 text-lime-200" : "bg-stone-200 text-slate-600"}`}>
+                  {myProductsCount}
+                </span>
+              </button>
+            )}
+
+            {user?.role === "buyer" && (
+              <button
+                type="button"
+                onClick={() => setScope("purchases")}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  scope === "purchases"
+                    ? "bg-emerald-900 text-white shadow-sm"
+                    : "bg-stone-100 text-slate-600 hover:bg-stone-200"
+                }`}
+              >
+                <ShoppingBag size={13} />
+                Mis Compras
+                <span className={`ml-1 rounded-full px-1.5 py-0.2 text-[10px] ${scope === "purchases" ? "bg-emerald-800 text-lime-200" : "bg-stone-200 text-slate-600"}`}>
+                  {myPurchasesCount}
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* Filtro de Estado (Disponibles vs Vendidos vs Todos) */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-[11px] font-medium text-slate-400">Estado:</span>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("all")}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                statusFilter === "all"
+                  ? "bg-slate-900 text-white font-semibold"
+                  : "text-slate-600 hover:bg-stone-100"
+              }`}
+            >
+              Todos
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("available")}
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                statusFilter === "available"
+                  ? "bg-emerald-100 text-emerald-900 font-semibold"
+                  : "text-slate-600 hover:bg-stone-100"
+              }`}
+            >
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              Disponibles ({availableCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("sold")}
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                statusFilter === "sold"
+                  ? "bg-slate-200 text-slate-900 font-semibold"
+                  : "text-slate-600 hover:bg-stone-100"
+              }`}
+            >
+              <CheckCircle2 size={12} className="text-slate-500" />
+              Vendidos ({soldCount})
+            </button>
+          </div>
         </div>
 
         {productsQuery.isPending ? (
@@ -116,17 +276,38 @@ export function CatalogPage() {
             <button className="rounded-lg bg-emerald-900 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800" type="button" onClick={() => void productsQuery.refetch()}>Reintentar</button>
           </div>
         ) : products.length > 0 ? (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((product) => <ProductCard key={product.id} product={product} />)}
+          <div>
+            <div className="mb-4 text-xs font-medium text-slate-500">
+              Mostrando <strong className="text-slate-800">{products.length}</strong> artículo{products.length === 1 ? "" : "s"}
+            </div>
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {products.map((product) => <ProductCard key={product.id} product={product} />)}
+            </div>
           </div>
         ) : (
           <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-6 text-center">
             <span className="mb-4 grid size-14 place-items-center rounded-2xl bg-emerald-100 text-emerald-900"><PackageSearch size={27} /></span>
-            <span className="text-[10px] font-bold uppercase tracking-[.15em] text-slate-400">{search ? "Sin coincidencias" : "El primer capítulo"}</span>
-            <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-900">{search ? "No encontramos ese artículo." : "El escaparate espera su primera pieza."}</h3>
-            <p className="mt-2 max-w-md text-xs leading-5 text-slate-500">{search ? "Prueba con otras palabras." : "Sé de los primeros en compartir algo especial con la comunidad."}</p>
-            {!search && (
-              <Link className="mt-5 inline-flex items-center gap-2 rounded-lg bg-emerald-900 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-800" to={user ? "/products/new" : "/register"}>
+            <span className="text-[10px] font-bold uppercase tracking-[.15em] text-slate-400">
+              {search ? "Sin coincidencias" : scope === "mine" ? "Sin artículos publicados" : "El primer capítulo"}
+            </span>
+            <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-900">
+              {search
+                ? "No encontramos artículos con esa búsqueda."
+                : scope === "mine"
+                ? "Aún no has publicado ningún artículo con esta cuenta."
+                : scope === "purchases"
+                ? "Aún no has ganado ninguna compra en subasta."
+                : "El escaparate espera su primera pieza."}
+            </h3>
+            <p className="mt-2 max-w-md text-xs leading-5 text-slate-500">
+              {search
+                ? "Prueba cambiando los filtros o las palabras de búsqueda."
+                : scope === "mine"
+                ? "Puedes hacer clic en 'Publicar un artículo' para añadir nuevas piezas al catálogo."
+                : "Sé de los primeros en compartir algo especial con la comunidad."}
+            </p>
+            {user?.role === "seller" && (
+              <Link className="mt-5 inline-flex items-center gap-2 rounded-lg bg-emerald-900 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-800" to="/products/new">
                 Publicar un artículo <ArrowRight size={15} />
               </Link>
             )}

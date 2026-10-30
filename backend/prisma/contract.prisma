@@ -10,6 +10,7 @@ model User {
 
   products  Product[] @relation("SellerProducts")
   purchases Product[] @relation("WinnerProducts")
+  bids      Bid[]     @relation("UserBids")
 }
 
 model Product {
@@ -27,8 +28,24 @@ model Product {
   winnerId String?
   winner   User?   @relation("WinnerProducts", fields: [winnerId], references: [id])
 
+  bids     Bid[]  @relation("ProductBids")
+
   createdAt DateTime @default(now())
 
   @@index([sellerId])
   @@index([winnerId])
+}
+
+model Bid {
+  id        String   @id @onCreate(uuid())
+  amount    Float
+  productId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  product Product @relation("ProductBids", fields: [productId], references: [id])
+  user    User    @relation("UserBids", fields: [userId], references: [id])
+
+  @@index([productId])
+  @@index([userId])
 }
